@@ -171,5 +171,97 @@
       {"args": [[9]], "expect": {"kind": "not_raises"}}
     ],
     "notes": "IndexError when fewer than two items; fix returns None and preserves the in-range result."
+  },
+  {
+    "id": "S12",
+    "func_name": "parse_bool",
+    "flaw_type": "type_coercion",
+    "severity": "medium",
+    "edge_case": null,
+    "should_auto_apply": true,
+    "code": "def parse_bool(value):\n    return bool(value)\n",
+    "reference_fix": "def parse_bool(value):\n    if isinstance(value, str):\n        return value.strip().lower() in (\"1\", \"true\", \"yes\", \"on\")\n    return bool(value)\n",
+    "behavior_inputs": [[true], [0]],
+    "test_cases": [
+      {"args": ["false"], "expect": {"kind": "returns", "value": false}},
+      {"args": ["true"], "expect": {"kind": "returns", "value": true}}
+    ],
+    "notes": "bool('false') is True — non-empty config strings aren't coerced; fix parses common truthy strings, unchanged for non-strings."
+  },
+  {
+    "id": "S13",
+    "func_name": "truncate",
+    "flaw_type": "always_appends_ellipsis",
+    "severity": "low",
+    "edge_case": null,
+    "should_auto_apply": true,
+    "code": "def truncate(text, limit):\n    return text[:limit] + \"...\"\n",
+    "reference_fix": "def truncate(text, limit):\n    return text[:limit] + \"...\" if len(text) > limit else text\n",
+    "behavior_inputs": [["hello world", 5]],
+    "test_cases": [
+      {"args": ["hi", 10], "expect": {"kind": "returns", "value": "hi"}}
+    ],
+    "notes": "Appends '...' even when text is shorter than the limit; fix only truncates when needed."
+  },
+  {
+    "id": "S14",
+    "func_name": "retry_attempts",
+    "flaw_type": "off_by_one",
+    "severity": "medium",
+    "edge_case": null,
+    "should_auto_apply": true,
+    "code": "def retry_attempts(max_retries):\n    return list(range(1, max_retries))\n",
+    "reference_fix": "def retry_attempts(max_retries):\n    return list(range(1, max_retries + 1))\n",
+    "behavior_inputs": [[0]],
+    "test_cases": [
+      {"args": [3], "expect": {"kind": "returns", "value": [1, 2, 3]}}
+    ],
+    "notes": "Off-by-one: returns max_retries-1 attempts; fix includes the final attempt. Preserved for max_retries=0."
+  },
+  {
+    "id": "S15",
+    "func_name": "dedup",
+    "flaw_type": "order_not_preserved",
+    "severity": "low",
+    "edge_case": null,
+    "should_auto_apply": true,
+    "code": "def dedup(items):\n    return list(set(items))\n",
+    "reference_fix": "def dedup(items):\n    return list(dict.fromkeys(items))\n",
+    "behavior_inputs": [[[1, 2, 3]]],
+    "test_cases": [
+      {"args": [[3, 1, 3, 2]], "expect": {"kind": "returns", "value": [3, 1, 2]}}
+    ],
+    "notes": "Dedup via set() loses insertion order; fix preserves order with dict.fromkeys."
+  },
+  {
+    "id": "S16",
+    "func_name": "make_greeting_html",
+    "flaw_type": "xss_injection",
+    "severity": "critical",
+    "edge_case": null,
+    "should_auto_apply": false,
+    "code": "def make_greeting_html(name):\n    return \"<h1>Hello \" + name + \"</h1>\"\n",
+    "reference_fix": "import html\n\ndef make_greeting_html(name):\n    return \"<h1>Hello \" + html.escape(name) + \"</h1>\"\n",
+    "behavior_inputs": [["Sam"]],
+    "test_cases": [
+      {"args": ["<script>"], "expect": {"kind": "returns", "value": "<h1>Hello &lt;script&gt;</h1>"}}
+    ],
+    "notes": "Unescaped user input in HTML (XSS). The fix escapes it and is behavior-preserving for safe names, but critical severity routes it to a human rather than auto-applying."
+  },
+  {
+    "id": "S17",
+    "func_name": "slugify",
+    "flaw_type": "none",
+    "severity": "low",
+    "edge_case": "no_flaw",
+    "should_auto_apply": false,
+    "code": "def slugify(text):\n    return \"-\".join(text.lower().split())\n",
+    "reference_fix": "def slugify(text):\n    return \"-\".join(text.lower().split())\n",
+    "behavior_inputs": [["Hello World"]],
+    "test_cases": [
+      {"args": ["Hello World"], "expect": {"kind": "returns", "value": "hello-world"}},
+      {"args": ["  Multiple   Spaces "], "expect": {"kind": "returns", "value": "multiple-spaces"}}
+    ],
+    "notes": "Correct basic slugify (lowercases, collapses whitespace). The agent must NOT invent a flaw or auto-apply a change."
   }
 ]

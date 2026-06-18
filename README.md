@@ -41,7 +41,7 @@ The LLM is fallible; this layer isn't — which is what makes the eval numbers t
 - **Latency** (median / p95) and an **edge-case** table.
 
 **Harness sanity check (offline replay, no key):** replaying the dataset's reference solutions
-reproduces the labels exactly — **6 auto-apply / 3 suggest / 2 escalate**, **0 unsafe**,
+reproduces the labels exactly — **10 auto-apply / 4 suggest / 3 escalate**, **0 unsafe**,
 auto-apply P/R/F1 = 1.0 — confirming the harness + dataset + trust policy are coherent.
 
 **Real-model results:** run the dashboard with a Gemini key and paste your numbers here:
@@ -56,7 +56,7 @@ auto-apply P/R/F1 = 1.0 — confirming the harness + dataset + trust policy are 
 
 > _Replace with your `Run eval` output. Screenshots in [`docs/`](docs/)._
 
-**Honest caveats:** the dataset is small (n=11) — numbers are directional. Groundedness is a
+**Honest caveats:** the dataset is small (n=17) — numbers are directional. Groundedness is a
 proxy. Fix-rate *lift* only appears with a real model (offline replay nails the fix on the first
 try). The executor is a timeboxed subprocess, **not** a hardened sandbox.
 
@@ -104,7 +104,7 @@ executor.py       # safe, timeboxed code execution
 pipeline.py       # detect → test → cross-model review loop → trust gate
 evals.py          # pure metric functions + run_eval()
 selftest.py       # 55 offline checks (no key, no third-party deps)
-snippets.json     # 11 labeled code snippets   practices.json # best-practices KB
+snippets.json     # 17 labeled code snippets   practices.json # best-practices KB
 docs/             # trust-gate diagram (+ screenshots)
 ```
 
