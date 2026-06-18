@@ -81,3 +81,129 @@ def percentile(xs: list, p: float) -> float:
     lo = int(k)
     hi = min(lo + 1, len(ys) - 1)
     return ys[lo] + (ys[hi] - ys[lo]) * (k - lo)
+
+
+# --------------------------------------------------------------------------- #
+# Orchestration: run the whole pipeline over the dataset and assemble metrics.
+# Lazy imports keep this module importable (for the pure metrics above) without
+# the pipeline / LLM stack — so the offline selftest can use those metrics with
+# zero third-party deps.
+# --------------------------------------------------------------------------- #
+def run_eval(snippets=None, *, overrides=None, max_iters=None, judge=True):
+    """Run every snippet through the pipeline and assemble a metrics report.
+
+    The deterministic spine (trust gate + executor) makes the headline numbers
+    trustworthy. Runs fully offline when TRIAGE_OFFLINE=1 (mock client).
+    Returns a dict: {n, summary, per_snippet, edge_cases, config}.
+    """
+    import json as _json
+
+    import config
+    from agents import (AUTO_APPLY, GROUNDEDNESS_JUDGE_PROMPT,
+                        build_groundedness_input)
+    from llm import get_client
+    from pipeline import run_snippet
+    from retriever import Retriever
+
+    if snippets is None:
+        with open("snippets.json", encoding="utf-8") as fh:
+            snippets = _json.load(fh)
+    with open("practices.json", encoding="utf-8") as fh:
+        practices = _json.load(fh)
+
+    retriever = Retriever(practices=practices, overrides=overrides)
+    judge_client = get_client("judge", overrides) if judge else None
+
+    per = []
+    iter_pairs = []          # (reviewer_approved, fix_passes) across all iterations
+    reviewer_rejections = 0
+
+    for snip in snippets:
+        trace = run_snippet(snip, retriever=retriever, overrides=overrides, max_iters=max_iters)
+        det = trace.get("detection") or {}
+        iters = trace.get("iterations") or []
+        decision = (trace.get("trust") or {}).get("decision")
+        final = iters[-1] if iters else None
+
+        for it in iters:
+            approved = bool(it.get("review", {}).get("approved"))
+            iter_pairs.append((approved, bool(it.get("fix_passes"))))
+            if not approved:
+                reviewer_rejections += 1
+
+        rec = {
+            "id": snip.get("id"),
+            "edge_case": snip.get("edge_case"),
+            "severity_label": snip.get("severity"),
+            "label_auto_apply": bool(snip.get("should_auto_apply")),
+            "true_has_flaw": snip.get("edge_case") != "no_flaw",
+            "decision": decision,
+            "reason": (trace.get("trust") or {}).get("reason"),
+            "predicted_auto": decision == AUTO_APPLY,
+            "detected_has_flaw": bool(det.get("has_flaw", False)),
+            "detected_severity": det.get("severity"),
+            "repro": bool(trace.get("repro")),
+            "iter0_fix_passes": bool(iters[0].get("fix_passes")) if iters else False,
+            "final_fix_passes": bool(final.get("fix_passes")) if final else False,
+            "final_behavior_preserved": bool(final.get("behavior_preserved")) if final else True,
+            "n_iterations": len(iters),
+            "converged": bool(trace.get("converged")),
+            "latency_ms": trace.get("latency_ms", 0.0),
+            "error": trace.get("error"),
+            "grounded": None,
+        }
+        if judge_client and rec["detected_has_flaw"] and det.get("rationale"):
+            try:
+                verdict = judge_client.complete_json(
+                    GROUNDEDNESS_JUDGE_PROMPT,
+                    build_groundedness_input(det.get("rationale", ""), trace.get("retrieved") or []))
+                rec["grounded"] = bool(verdict.get("grounded"))
+            except Exception:
+                rec["grounded"] = None
+        rec["unsafe_auto_apply"] = rec["predicted_auto"] and not (
+            rec["final_fix_passes"] and rec["final_behavior_preserved"])
+        per.append(rec)
+
+    flawed = [r for r in per if r["n_iterations"] > 0]      # a fix was attempted
+    judged = [r for r in per if r["grounded"] is not None]
+
+    summary = {
+        # Headline safety guarantee — must be 0.
+        "unsafe_auto_applies": sum(1 for r in per if r["unsafe_auto_apply"]),
+        # Trust-gate decision quality vs the should_auto_apply labels.
+        "auto_apply": precision_recall_f1(per, lambda r: r["predicted_auto"], lambda r: r["label_auto_apply"]),
+        "decisions": {d: sum(1 for r in per if r["decision"] == d)
+                      for d in ("auto_apply", "suggest", "escalate")},
+        # Does the cross-model review loop earn its cost?
+        "fix_rate_iter0": rate(flawed, lambda r: r["iter0_fix_passes"]),
+        "fix_rate_final": rate(flawed, lambda r: r["final_fix_passes"]),
+        "fix_rate_lift": rate(flawed, lambda r: r["final_fix_passes"]) - rate(flawed, lambda r: r["iter0_fix_passes"]),
+        "median_iterations": median([r["n_iterations"] for r in flawed]),
+        "reviewer_rejections": reviewer_rejections,
+        "reviewer_test_agreement": rate(iter_pairs, lambda p: p[0] == p[1]),
+        # Detection + safety quality.
+        "has_flaw_accuracy": accuracy([(r["detected_has_flaw"], r["true_has_flaw"]) for r in per]),
+        "severity_accuracy": accuracy([(r["detected_severity"], r["severity_label"])
+                                       for r in per if r["true_has_flaw"] and r["detected_has_flaw"]]),
+        "behavior_preservation_rate": rate(flawed, lambda r: r["final_behavior_preserved"]),
+        "groundedness_rate": rate(judged, lambda r: r["grounded"]),   # proxy metric
+        "groundedness_n": len(judged),
+        "latency_ms": {"median": median([r["latency_ms"] for r in per]),
+                       "p95": percentile([r["latency_ms"] for r in per], 95)},
+        "pipeline_errors": sum(1 for r in per if r["error"]),
+    }
+    edge_cases = [{"edge_case": r["edge_case"], "id": r["id"], "decision": r["decision"],
+                   "label_auto_apply": r["label_auto_apply"],
+                   "ok": r["predicted_auto"] == r["label_auto_apply"]}
+                  for r in per if r["edge_case"]]
+    return {
+        "n": len(per),
+        "summary": summary,
+        "per_snippet": per,
+        "edge_cases": edge_cases,
+        "config": {
+            "max_iters": max_iters if max_iters is not None else config.REVIEW_LOOP_MAX_ITERS,
+            "offline": config.offline_mode(),
+            "models": {role: config.model_for(role, overrides) for role in config.ROLES},
+        },
+    }
