@@ -243,6 +243,24 @@ check("pipeline: review loop is bounded", len(_trace.get("iterations", [])) <= c
 check("pipeline: one bad refactor doesn't crash the run", _trace.get("error") is None)
 
 # --------------------------------------------------------------------------- #
+# 8. Eval harness — offline run over a subset returns a well-formed report
+# --------------------------------------------------------------------------- #
+os.environ["TRIAGE_OFFLINE"] = "1"
+try:
+    _res = evals.run_eval(snippets=SNIPPETS[:3])
+finally:
+    os.environ.pop("TRIAGE_OFFLINE", None)
+_summ = _res.get("summary", {})
+check("eval: report has summary + per-snippet rows",
+      "summary" in _res and len(_res.get("per_snippet", [])) == 3)
+check("eval: decisions sum to n", sum(_summ.get("decisions", {}).values()) == 3)
+check("eval: unsafe_auto_applies is a non-negative int",
+      isinstance(_summ.get("unsafe_auto_applies"), int) and _summ["unsafe_auto_applies"] >= 0)
+check("eval: no pipeline errors offline", _summ.get("pipeline_errors") == 0)
+check("eval: config records models + offline flag",
+      "models" in _res.get("config", {}) and _res["config"].get("offline") is True)
+
+# --------------------------------------------------------------------------- #
 # Summary
 # --------------------------------------------------------------------------- #
 print(f"selftest: {_PASS} passed, {_FAIL} failed")
