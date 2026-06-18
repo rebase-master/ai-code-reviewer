@@ -124,6 +124,56 @@ def _mock_vector(text: str, dim: int = 16):
     return v
 
 
+# --- Oracle replay -------------------------------------------------------- #
+# When offline, if a prompt is about a known dataset snippet, the mock returns
+# that snippet's *reference* solution. This makes offline runs show real,
+# correct per-snippet behavior (a ground-truth ceiling — not a live model), so
+# the app demos end-to-end with no API key. Best-effort: degrades to the flat
+# canned responses for unknown code (e.g. custom paste) or a missing dataset.
+_ORACLE_INDEX = None
+
+
+def _oracle_index() -> list:
+    global _ORACLE_INDEX
+    if _ORACLE_INDEX is None:
+        try:
+            with open("snippets.json", encoding="utf-8") as fh:
+                _ORACLE_INDEX = json.load(fh)
+        except Exception:
+            _ORACLE_INDEX = []
+    return _ORACLE_INDEX
+
+
+def _match_snippet(user: str):
+    text = user or ""
+    for s in _oracle_index():
+        code = (s.get("code") or "").strip()
+        if code and code in text:
+            return s
+    return None
+
+
+def _oracle_response(role: str, s: dict):
+    edge = s.get("edge_case")
+    has_flaw = edge != "no_flaw"
+    if role == "detector":
+        return {"has_flaw": has_flaw, "flaw_type": s.get("flaw_type", "none"),
+                "severity": s.get("severity", "low"),
+                "confidence": 0.9 if has_flaw else 0.95, "cited_practice_id": None,
+                "ambiguous": edge in ("subtle", "multi"), "rationale": s.get("notes", "")}
+    if role == "test_author":
+        return {"cases": s.get("test_cases", []), "rationale": "Reference test for the labeled flaw."}
+    if role == "refactorer":
+        return {"code": s.get("reference_fix", s.get("code", "")),
+                "explanation": "Reference fix (offline replay)."}
+    if role == "reviewer":
+        return {"approved": True, "cited_practice_id": None,
+                "comments": "Reference fix — correct, minimal, behavior-preserving."}
+    if role == "judge":
+        return {"grounded": True, "unsupported_claims": []}
+    return None
+
+
 class MockClient(LLMClient):
     """Offline stand-in: role-shaped JSON + deterministic embeddings, no key/network."""
 
@@ -132,6 +182,11 @@ class MockClient(LLMClient):
         self.model = model
 
     def _raw(self, system, user, temperature=0.0):
+        snip = _match_snippet(user)
+        if snip is not None:
+            payload = _oracle_response(self.role, snip)
+            if payload is not None:
+                return json.dumps(payload)
         return json.dumps(_MOCK_RESPONSES.get(self.role, {}))
 
     def embed(self, texts, is_query=False):
