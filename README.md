@@ -44,21 +44,44 @@ The LLM is fallible; this layer isn't — which is what makes the eval numbers t
 reproduces the labels exactly — **10 auto-apply / 4 suggest / 3 escalate**, **0 unsafe**,
 auto-apply P/R/F1 = 1.0 — confirming the harness + dataset + trust policy are coherent.
 
-**Real-model results:** run the dashboard with a Gemini key and paste your numbers here:
+**Real-model results** (Gemini free tier — `gemini-3.1-flash-lite` generators + a cross-model
+`gemini-2.5-flash-lite` reviewer; 17/17 snippets completed, 0 pipeline errors):
 
 | metric | value |
 |---|---|
-| unsafe auto-applies | _your run_ |
-| auto-apply P / R / F1 | _your run_ |
-| fix-rate lift (loop) | _your run_ |
-| has-flaw / severity accuracy | _your run_ |
-| groundedness (proxy) | _your run_ |
+| **unsafe auto-applies** | **0** |
+| auto-apply precision / recall / F1 | 0.57 / 0.40 / 0.47 |
+| decisions (auto / suggest / escalate) | 7 / 0 / 10 |
+| fix-rate lift (loop) | 56% → 56% |
+| has-flaw / severity accuracy | 82% / 36% |
+| behavior preserved | 100% |
+| groundedness (proxy, n=16) | 75% |
+| latency p95 | ~82 s\* |
 
-> _Replace with your `Run eval` output. Screenshots in [`docs/`](docs/)._
+\* inflated by free-tier rate-limit backoff; paid quota collapses it. (Dashboard screenshot in [`docs/`](docs/).)
 
-**Honest caveats:** the dataset is small (n=17) — numbers are directional. Groundedness is a
-proxy. Fix-rate *lift* only appears with a real model (offline replay nails the fix on the first
-try). The executor is a timeboxed subprocess, **not** a hardened sandbox.
+### What breaks — and how I'd fix it
+
+The point isn't the scores; it's that the system **measures where it's unsafe vs. correct vs.
+unproven** — and the deterministic gate held **0 unsafe auto-applies** even when the model
+misbehaved:
+
+- **Governance gating leans on a fallible signal.** Two critical cases — an XSS escape and a
+  missing overdraft check — were *auto-applied* instead of routed to a human, because the
+  `critical → human` rule keys off the model's severity rating and **severity accuracy was only
+  36%**. The fixes were correct (so still 0 unsafe), but security/financial changes shouldn't
+  auto-merge — and `suggest` fired **0 times** all run, confirming the soft-review tier is starved
+  by unreliable model self-assessment. **Fix:** a *deterministic* sensitivity guard — flaw types /
+  code patterns matching security or money concerns force human review regardless of model severity.
+- **The test-author is the weak link.** Recall is 0.40 mostly because, for several flawed snippets,
+  the generated test didn't fail on the buggy original — so the gate correctly **refused to
+  auto-apply without a red→green proof**. These are *safe* false-negatives (the spine doing its
+  job), not unsafe ones. **Fix:** few-shot the test-author on tests that fail-then-pass.
+- **The loop didn't pay off here** (fix-rate lift 0): a second refinement pass never rescued a
+  failing fix on this set — honest, and worth a paid-tier re-run at `K=2` to confirm.
+
+**Caveats:** small set (n=17) — directional, not definitive; groundedness is an LLM-judge proxy;
+the executor is a timeboxed subprocess, **not** a hardened sandbox.
 
 ## Run it (uv)
 
