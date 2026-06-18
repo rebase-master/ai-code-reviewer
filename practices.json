@@ -1,0 +1,37 @@
+[
+  {
+    "id": "P01",
+    "title": "Guard against empty collections",
+    "content": "Functions that index into a sequence, divide by its length, or call max()/min()/statistics on it must handle the empty case explicitly. Decide the contract for empty input (return a neutral value such as 0 or None, or raise a clear error) instead of letting ZeroDivisionError or ValueError surface."
+  },
+  {
+    "id": "P02",
+    "title": "Avoid mutable default arguments",
+    "content": "Default argument values are evaluated once when the function is defined, so a default list or dict is shared across all calls and accumulates state. Use None as the default and create a fresh object inside the function body: def f(x, items=None): if items is None: items = []."
+  },
+  {
+    "id": "P03",
+    "title": "Validate inputs and handle None / missing keys",
+    "content": "Do not assume inputs are present and well-formed. Check for None before calling methods or operators on a value, and use dict.get with a default rather than direct key access when a key may be absent. Fail with a clear message or a safe default instead of an AttributeError or KeyError."
+  },
+  {
+    "id": "P04",
+    "title": "Handle out-of-range and boundary inputs",
+    "content": "Indexing and slicing assume elements exist. Before accessing items[i], confirm the index is in range, or provide a fallback. Pay attention to off-by-one boundaries and the smallest/largest valid inputs, which are the most common source of defects."
+  },
+  {
+    "id": "P05",
+    "title": "Validate state-changing operations before applying them",
+    "content": "Operations that change critical state — payments, balance changes, deletions, transfers — must validate their preconditions before mutating anything and fail safely when a precondition is not met. For example, a withdrawal must reject an amount greater than the available balance rather than producing a negative balance."
+  },
+  {
+    "id": "P06",
+    "title": "Never build queries or commands by string concatenation",
+    "content": "Concatenating untrusted input directly into SQL, shell, or other command strings enables injection attacks. Use parameterized queries or a safe builder/escaping API so that input is always treated as data, never as executable syntax."
+  },
+  {
+    "id": "P07",
+    "title": "Prefer efficient lookups and avoid needless nested loops",
+    "content": "Membership tests against a list are O(n); converting to a set or dict makes them O(1). Nested loops over the same collection are O(n^2) and often replaceable with a single pass or a set-based check. Optimize only while preserving behavior, and confirm the result is unchanged."
+  }
+]
