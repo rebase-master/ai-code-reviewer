@@ -164,14 +164,19 @@ def run_eval(snippets=None, *, overrides=None, max_iters=None, judge=True):
             rec["final_fix_passes"] and rec["final_behavior_preserved"])
         per.append(rec)
 
-    flawed = [r for r in per if r["n_iterations"] > 0]      # a fix was attempted
-    judged = [r for r in per if r["grounded"] is not None]
+    done = [r for r in per if not r["error"]]               # completed (no API/pipeline error)
+    flawed = [r for r in done if r["n_iterations"] > 0]     # a fix was attempted
+    judged = [r for r in done if r["grounded"] is not None]
 
     summary = {
-        # Headline safety guarantee — must be 0.
+        # Coverage — quality metrics below are computed over COMPLETED snippets only,
+        # so an API outage (rate limits / 503) can't masquerade as low recall.
+        "completed": len(done),
+        "pipeline_errors": sum(1 for r in per if r["error"]),
+        # Headline safety guarantee — must be 0 (checked across ALL snippets).
         "unsafe_auto_applies": sum(1 for r in per if r["unsafe_auto_apply"]),
-        # Trust-gate decision quality vs the should_auto_apply labels.
-        "auto_apply": precision_recall_f1(per, lambda r: r["predicted_auto"], lambda r: r["label_auto_apply"]),
+        # Trust-gate decision quality vs the should_auto_apply labels (completed only).
+        "auto_apply": precision_recall_f1(done, lambda r: r["predicted_auto"], lambda r: r["label_auto_apply"]),
         "decisions": {d: sum(1 for r in per if r["decision"] == d)
                       for d in ("auto_apply", "suggest", "escalate")},
         # Does the cross-model review loop earn its cost?
@@ -181,16 +186,15 @@ def run_eval(snippets=None, *, overrides=None, max_iters=None, judge=True):
         "median_iterations": median([r["n_iterations"] for r in flawed]),
         "reviewer_rejections": reviewer_rejections,
         "reviewer_test_agreement": rate(iter_pairs, lambda p: p[0] == p[1]),
-        # Detection + safety quality.
-        "has_flaw_accuracy": accuracy([(r["detected_has_flaw"], r["true_has_flaw"]) for r in per]),
+        # Detection + safety quality (completed only).
+        "has_flaw_accuracy": accuracy([(r["detected_has_flaw"], r["true_has_flaw"]) for r in done]),
         "severity_accuracy": accuracy([(r["detected_severity"], r["severity_label"])
-                                       for r in per if r["true_has_flaw"] and r["detected_has_flaw"]]),
+                                       for r in done if r["true_has_flaw"] and r["detected_has_flaw"]]),
         "behavior_preservation_rate": rate(flawed, lambda r: r["final_behavior_preserved"]),
         "groundedness_rate": rate(judged, lambda r: r["grounded"]),   # proxy metric
         "groundedness_n": len(judged),
-        "latency_ms": {"median": median([r["latency_ms"] for r in per]),
-                       "p95": percentile([r["latency_ms"] for r in per], 95)},
-        "pipeline_errors": sum(1 for r in per if r["error"]),
+        "latency_ms": {"median": median([r["latency_ms"] for r in done]),
+                       "p95": percentile([r["latency_ms"] for r in done], 95)},
     }
     edge_cases = [{"edge_case": r["edge_case"], "id": r["id"], "decision": r["decision"],
                    "label_auto_apply": r["label_auto_apply"],

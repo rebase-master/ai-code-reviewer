@@ -10,6 +10,10 @@ def _render_dashboard(res):
     if res["config"]["offline"]:
         st.warning("Offline replay — agents return the dataset's *reference* solutions, so these are "
                    "ideal/ceiling numbers, not a live model's. Run with a key (offline off) for real results.")
+    if s.get("pipeline_errors"):
+        st.warning(f"⚠️ {s['pipeline_errors']} of {res['n']} snippets errored (e.g. rate limits / 503) — "
+                   f"the quality metrics below are over the {s.get('completed', 0)} that completed "
+                   f"(see the per-snippet 'error' column). Unsafe-auto-applies is still checked across all.")
 
     unsafe = s["unsafe_auto_applies"]
     c = st.columns(4)
@@ -36,7 +40,7 @@ def _render_dashboard(res):
     d[1].metric("Severity accuracy", f"{s['severity_accuracy']:.0%}")
     d[2].metric("Behavior preserved", f"{s['behavior_preservation_rate']:.0%}")
     d[3].metric(f"Groundedness (n={s['groundedness_n']})", f"{s['groundedness_rate']:.0%}")
-    st.caption(f"n={res['n']} snippets (small — numbers are directional). "
+    st.caption(f"{s.get('completed', res['n'])}/{res['n']} snippets completed (small set — directional). "
                f"Groundedness is an LLM-judge proxy. Reviewer/test agreement: "
                f"{s['reviewer_test_agreement']:.0%}; reviewer rejections: {s['reviewer_rejections']}.")
 

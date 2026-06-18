@@ -21,16 +21,19 @@ REVIEW_LOOP_MAX_ITERS: int = int(os.environ.get("REVIEW_LOOP_MAX_ITERS", "2"))
 # --- Per-role model routing ------------------------------------------------ #
 # provider is one of: "gemini" (shipped), "mock" (offline, deterministic),
 # and — documented — "anthropic" / "openai" (add an adapter + key to enable).
-# The reviewer intentionally defaults to a DIFFERENT model than the generator.
-# Unknown / busy / timed-out models self-heal via llm.py (it lists the available
-# models and retries on a valid one); rolling aliases like "gemini-flash-lite-latest"
-# also sidestep version-churn 404s.
+# Tuned for the Gemini FREE tier, where limits are per-model: gemini-3.1-flash-lite
+# allows ~500 requests/day (15 RPM) vs ~20/day for the 2.5/3.5 models. So the
+# high-volume roles use 3.1-flash-lite; the reviewer runs a DIFFERENT model
+# (cross-model review) and is the least-called role. Busy/missing models self-heal
+# in llm.py (backoff + retry, then list-and-switch). For a clean free run launch with
+# REVIEW_LOOP_MAX_ITERS=1 (keeps the reviewer within its daily cap); set up billing to
+# lift the limits and bump the loop back to 2.
 DEFAULT_MODELS: dict[str, dict[str, str]] = {
-    "detector":    {"provider": "gemini", "model": "gemini-2.5-flash-lite"},
-    "test_author": {"provider": "gemini", "model": "gemini-2.5-flash-lite"},
-    "refactorer":  {"provider": "gemini", "model": "gemini-2.5-flash-lite"},
-    "reviewer":    {"provider": "gemini", "model": "gemini-3.1-flash-lite"},  # different lite model
-    "judge":       {"provider": "gemini", "model": "gemini-2.5-flash-lite"},
+    "detector":    {"provider": "gemini", "model": "gemini-3.1-flash-lite"},
+    "test_author": {"provider": "gemini", "model": "gemini-3.1-flash-lite"},
+    "refactorer":  {"provider": "gemini", "model": "gemini-3.1-flash-lite"},
+    "reviewer":    {"provider": "gemini", "model": "gemini-2.5-flash-lite"},  # different model = cross-model review
+    "judge":       {"provider": "gemini", "model": "gemini-3.1-flash-lite"},
     "embedder":    {"provider": "gemini", "model": "gemini-embedding-001"},
 }
 

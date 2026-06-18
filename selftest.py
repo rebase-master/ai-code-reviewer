@@ -21,8 +21,8 @@ import evals
 from agents import (AUTO_APPLY, DECISIONS, ESCALATE, SEVERITIES, SUGGEST,
                     trust_decision)
 from executor import behavior_preserved, evaluate_cases, run_inputs
-from llm import (LLMError, MockClient, _is_recoverable, _pick_model, get_client,
-                 parse_json)
+from llm import (LLMError, MockClient, _is_recoverable, _pick_model, _retry_delay,
+                 get_client, parse_json)
 from pipeline import run_snippet
 
 _PASS = 0
@@ -258,6 +258,7 @@ check("eval: decisions sum to n", sum(_summ.get("decisions", {}).values()) == 3)
 check("eval: unsafe_auto_applies is a non-negative int",
       isinstance(_summ.get("unsafe_auto_applies"), int) and _summ["unsafe_auto_applies"] >= 0)
 check("eval: no pipeline errors offline", _summ.get("pipeline_errors") == 0)
+check("eval: all snippets completed offline (no errors)", _summ.get("completed") == 3)
 check("eval: config records models + offline flag",
       "models" in _res.get("config", {}) and _res["config"].get("offline") is True)
 
@@ -276,6 +277,10 @@ check("llm: fall back to a listed model when requested is missing",
 check("llm: never reuse the model that just failed",
       _pick_model("a", ["a", "b"], ["a", "b"], exclude="a") == "b")
 check("llm: None when nothing is available", _pick_model("a", [], ["x"]) is None)
+check("llm: honors an API 'retry in Ns' delay", _retry_delay("please retry in 12s", 0) == 12.0)
+check("llm: honors a retryDelay field", _retry_delay("'retryDelay': '35s'", 0) == 35.0)
+check("llm: exponential backoff without a hint", _retry_delay("boom", 3) == 8.0)
+check("llm: retry delay is capped", _retry_delay("retry in 999s", 0) <= 40.0)
 
 # --------------------------------------------------------------------------- #
 # Summary
