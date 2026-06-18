@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import time
 
 import config
 
@@ -73,10 +75,25 @@ def _require_dict(obj):
 # --- Model fallback: self-heal when a model is missing, busy, or times out --- #
 # Candidates are tried in order, intersected with what the API actually lists.
 # Rolling aliases first (robust to version churn), then concrete current models.
-GENERATE_FALLBACKS = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-3.5-flash",
-                      "gemini-flash-lite-latest", "gemini-2.5-flash-lite",
-                      "gemini-3.1-flash-lite", "gemini-pro-latest"]
+# Tried in order, intersected with what the API lists. HIGH free-tier quota first:
+# gemini-3.1-flash-lite (~500 RPD) before the ~20 RPD 2.5/3.5 models.
+GENERATE_FALLBACKS = ["gemini-3.1-flash-lite", "gemini-flash-lite-latest", "gemini-2.5-flash-lite",
+                      "gemini-flash-latest", "gemini-2.5-flash", "gemini-3.5-flash", "gemini-pro-latest"]
 EMBED_FALLBACKS = ["gemini-embedding-001", "gemini-embedding-latest", "text-embedding-004"]
+
+MAX_RETRIES = 3   # backoff attempts on the same model before switching
+
+
+def _retry_delay(message, attempt, cap: float = 40.0) -> float:
+    """Seconds to wait before a retry: honor an API-provided delay if present
+    (e.g. 'retry in 35s' or 'retryDelay: 35s'), else exponential backoff, capped."""
+    msg = message or ""
+    for pat in (r"retry in (\d+(?:\.\d+)?)\s*s",
+                r"retrydelay['\"]?\s*[:=]\s*['\"]?(\d+(?:\.\d+)?)\s*s"):
+        m = re.search(pat, msg, re.IGNORECASE)
+        if m:
+            return min(float(m.group(1)), cap)
+    return min(2.0 ** attempt, cap)
 
 
 def _is_recoverable(code, message) -> bool:
@@ -146,20 +163,35 @@ class GeminiClient(LLMClient):
 
     def _call_with_fallback(self, requested, kind, fn):
         model = GeminiClient._resolved.get(requested, requested)
-        try:
-            return fn(model)
-        except Exception as exc:
-            if not _is_recoverable(getattr(exc, "code", None), str(exc)):
-                raise
-            gen, emb = self._load_catalog()
-            available = gen if kind == "gen" else emb
-            fallbacks = GENERATE_FALLBACKS if kind == "gen" else EMBED_FALLBACKS
-            alt = _pick_model(requested, available, fallbacks, exclude=model)
-            if not alt or alt == model:
-                raise
-            out = fn(alt)                              # retry once on the alternative
-            GeminiClient._resolved[requested] = alt    # remember for subsequent calls
-            return out
+        last = None
+        # 1) Back off and retry on the SAME model for transient rate-limit / availability
+        #    errors (429 RPM, 503 overloaded, timeouts), honoring the API's retry delay.
+        for attempt in range(MAX_RETRIES):
+            try:
+                return fn(model)
+            except Exception as exc:
+                code, msg = getattr(exc, "code", None), str(exc)
+                if code == 404:
+                    last = exc
+                    break                                   # model gone -> switch, don't wait
+                if not _is_recoverable(code, msg):
+                    raise                                   # genuine error -> surface it
+                last = exc
+                if attempt < MAX_RETRIES - 1:
+                    time.sleep(_retry_delay(msg, attempt))
+        # 2) Still failing -> switch to a different available (high-quota) model, once.
+        gen, emb = self._load_catalog()
+        available = gen if kind == "gen" else emb
+        fallbacks = GENERATE_FALLBACKS if kind == "gen" else EMBED_FALLBACKS
+        alt = _pick_model(requested, available, fallbacks, exclude=model)
+        if alt and alt != model:
+            try:
+                out = fn(alt)
+                GeminiClient._resolved[requested] = alt
+                return out
+            except Exception as exc:
+                last = exc
+        raise last
 
     def _generate(self, model, system, user, temperature):
         from google.genai import types
