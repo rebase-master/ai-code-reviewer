@@ -12,12 +12,15 @@ from __future__ import annotations
 import difflib
 import itertools
 import json
+import os
 import sys
 
+import agents
 import evals
 from agents import (AUTO_APPLY, DECISIONS, ESCALATE, SEVERITIES, SUGGEST,
                     trust_decision)
 from executor import behavior_preserved, evaluate_cases, run_inputs
+from llm import LLMError, MockClient, get_client, parse_json
 
 _PASS = 0
 _FAIL = 0
@@ -171,6 +174,57 @@ for s in SNIPPETS:
         _consistency_ok = False
 check("data: reference fixes valid (flaw reproduces & fix passes; clean snippets don't)", _validity_ok)
 check("data: labels match the trust policy on idealized signals", _consistency_ok)
+
+# --------------------------------------------------------------------------- #
+# 6. LLM client — parse-ladder, offline mock shapes, routing, retry
+# --------------------------------------------------------------------------- #
+check("llm: parses clean json", parse_json('{"a": 1}') == {"a": 1})
+check("llm: parses fenced json", parse_json('```json\n{"a": 1}\n```') == {"a": 1})
+check("llm: parses json wrapped in prose", parse_json('Sure, here: {"a": 1} done') == {"a": 1})
+_raised = False
+try:
+    parse_json("not json at all")
+except LLMError:
+    _raised = True
+check("llm: raises on unparseable output", _raised)
+
+_role_keys = {
+    "detector": {"has_flaw", "flaw_type", "severity", "confidence", "rationale"},
+    "test_author": {"cases", "rationale"},
+    "refactorer": {"code", "explanation"},
+    "reviewer": {"approved", "comments"},
+    "judge": {"grounded", "unsupported_claims"},
+}
+check("llm: mock client returns role-shaped JSON",
+      all(keys.issubset(MockClient(role=r).complete_json("s", "u")) for r, keys in _role_keys.items()))
+
+_vecs = MockClient(role="embedder").embed(["abc", "defgh"])
+check("llm: mock embed -> equal-length vectors",
+      len(_vecs) == 2 and len(_vecs[0]) == len(_vecs[1]) > 0)
+
+os.environ["TRIAGE_OFFLINE"] = "1"
+check("llm: offline get_client -> MockClient", isinstance(get_client("detector"), MockClient))
+del os.environ["TRIAGE_OFFLINE"]
+
+
+class _FlakyMock(MockClient):
+    """Bad JSON on the first call, valid on the second — exercises the retry."""
+    def __init__(self):
+        super().__init__(role="detector")
+        self.calls = 0
+
+    def _raw(self, system, user, temperature=0.0):
+        self.calls += 1
+        return "garbage" if self.calls == 1 else '{"ok": true}'
+
+
+_flaky = _FlakyMock()
+check("llm: complete_json retries once then parses",
+      _flaky.complete_json("s", "u") == {"ok": True} and _flaky.calls == 2)
+
+check("agents: all role prompts present", all(hasattr(agents, n) for n in (
+    "DETECTOR_SYSTEM_PROMPT", "TEST_AUTHOR_SYSTEM_PROMPT", "REFACTORER_SYSTEM_PROMPT",
+    "REVIEWER_SYSTEM_PROMPT", "GROUNDEDNESS_JUDGE_PROMPT")))
 
 # --------------------------------------------------------------------------- #
 # Summary
