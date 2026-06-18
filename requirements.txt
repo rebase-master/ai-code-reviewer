@@ -1,0 +1,6 @@
+# Pinned for reproducibility. After a clean install you can fully pin with:
+#   pip freeze > requirements.lock.txt
+google-genai>=1.0          # Gemini SDK  ->  from google import genai
+streamlit>=1.40,<2         # UI
+numpy>=1.26,<3             # cosine retrieval math
+pandas>=2.1,<3             # eval dashboard tables
