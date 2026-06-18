@@ -211,6 +211,9 @@ tab1, tab2, tab3 = st.tabs(["🔎 Live demo", "📊 Eval dashboard", "🚢 How I
 reviewer_model = config.model_for("reviewer", overrides)["model"]
 
 with tab1:
+    if config.offline_mode():
+        st.caption("⚠️ Offline mock mode — agent outputs are canned and **do not vary by snippet**. "
+                   "Add a GEMINI_API_KEY and turn off offline mode (sidebar) for real per-snippet analysis.")
     snippets = _load_snippets()
     labels = {f"{s['id']} — {s['flaw_type']}": s for s in snippets}
     choice = st.selectbox("Pick a labeled snippet, or choose Custom to paste your own",
@@ -220,16 +223,23 @@ with tab1:
                             value="def average(nums):\n    return sum(nums) / len(nums)\n")
         func_name = st.text_input("Function name", value="average")
         snippet = {"id": "custom", "func_name": func_name, "code": code}
+        sig = f"custom::{func_name}::{code}"
     else:
         snippet = labels[choice]
         st.code(snippet["code"], language="python")
+        sig = choice
 
     if st.button("Run pipeline", type="primary"):
         with st.spinner("detect → test → review loop → trust gate…"):
             st.session_state["last_trace"] = run_snippet(snippet, overrides=overrides)
-    if st.session_state.get("last_trace"):
+            st.session_state["last_sig"] = sig
+    # Only show the trace if it belongs to the current selection — otherwise the
+    # panel below would be a stale result from a previous run (confusing).
+    if st.session_state.get("last_trace") and st.session_state.get("last_sig") == sig:
         st.divider()
         _render_trace(st.session_state["last_trace"], reviewer_model)
+    elif st.session_state.get("last_trace"):
+        st.info("Selection changed — click **Run pipeline** to analyze this snippet.")
 
 with tab2:
     st.write("Runs every snippet through the pipeline and measures the system. "
