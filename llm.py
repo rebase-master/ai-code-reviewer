@@ -70,8 +70,45 @@ def _require_dict(obj):
     return obj
 
 
+# --- Model fallback: self-heal when a model is missing, busy, or times out --- #
+# Candidates are tried in order, intersected with what the API actually lists.
+# Rolling aliases first (robust to version churn), then concrete current models.
+GENERATE_FALLBACKS = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-3.5-flash",
+                      "gemini-flash-lite-latest", "gemini-2.5-flash-lite",
+                      "gemini-3.1-flash-lite", "gemini-pro-latest"]
+EMBED_FALLBACKS = ["gemini-embedding-001", "gemini-embedding-latest", "text-embedding-004"]
+
+
+def _is_recoverable(code, message) -> bool:
+    """True for errors worth retrying on a *different* model (missing / busy / slow)."""
+    if code in (404, 408, 409, 429, 500, 502, 503, 504):
+        return True
+    m = (message or "").lower()
+    return any(t in m for t in ("not_found", "not found", "unavailable", "overloaded",
+                                "deadline", "timeout", "try again", "resource_exhausted"))
+
+
+def _pick_model(requested, available, fallbacks, exclude=None):
+    """Pick a usable model from `available`: keep `requested` if present, else the first
+    `fallbacks` entry that's available, else any available — never `exclude`. None if empty."""
+    cands = [m for m in available if m != exclude]
+    if not cands:
+        return None
+    for c in [requested, *fallbacks]:
+        if c != exclude and c in cands:
+            return c
+    return cands[0]
+
+
 class GeminiClient(LLMClient):
-    """Google Gemini via the google-genai SDK (imported lazily)."""
+    """Google Gemini via the google-genai SDK (imported lazily).
+
+    Self-heals: if a model is not found / overloaded / times out, it lists the
+    available models, picks a valid alternative, retries once, and remembers it.
+    """
+
+    _catalog_cache = None      # (generate_models, embed_models) — listed once per process
+    _resolved: dict = {}       # requested model -> working model (shared across roles)
 
     def __init__(self, model: str, api_key: "str | None" = None):
         self.model = model
@@ -81,28 +118,73 @@ class GeminiClient(LLMClient):
         from google import genai  # lazy import: keeps the module/selftest SDK-free
         self._client = genai.Client(api_key=key)
 
-    def _raw(self, system, user, temperature=0.0):
+    def _load_catalog(self):
+        """List models once; split into generate-capable and embed-capable short names."""
+        if GeminiClient._catalog_cache is not None:
+            return GeminiClient._catalog_cache
+        gen, emb = [], []
+        try:
+            for m in self._client.models.list():
+                short = (getattr(m, "name", "") or "").split("/")[-1]
+                if not short:
+                    continue
+                actions = (getattr(m, "supported_actions", None)
+                           or getattr(m, "supported_generation_methods", None) or [])
+                has_gen = any(a in ("generateContent", "generate_content") for a in actions)
+                has_emb = any(a in ("embedContent", "embed_content") for a in actions)
+                if not actions:                       # attribute absent -> infer from the name
+                    has_emb = "embedding" in short
+                    has_gen = not has_emb
+                if has_gen:
+                    gen.append(short)
+                if has_emb:
+                    emb.append(short)
+        except Exception:
+            pass
+        GeminiClient._catalog_cache = (gen, emb)
+        return GeminiClient._catalog_cache
+
+    def _call_with_fallback(self, requested, kind, fn):
+        model = GeminiClient._resolved.get(requested, requested)
+        try:
+            return fn(model)
+        except Exception as exc:
+            if not _is_recoverable(getattr(exc, "code", None), str(exc)):
+                raise
+            gen, emb = self._load_catalog()
+            available = gen if kind == "gen" else emb
+            fallbacks = GENERATE_FALLBACKS if kind == "gen" else EMBED_FALLBACKS
+            alt = _pick_model(requested, available, fallbacks, exclude=model)
+            if not alt or alt == model:
+                raise
+            out = fn(alt)                              # retry once on the alternative
+            GeminiClient._resolved[requested] = alt    # remember for subsequent calls
+            return out
+
+    def _generate(self, model, system, user, temperature):
         from google.genai import types
         resp = self._client.models.generate_content(
-            model=self.model,
-            contents=user,
+            model=model, contents=user,
             config=types.GenerateContentConfig(
-                system_instruction=system,
-                response_mime_type="application/json",
-                temperature=temperature,
-            ),
-        )
+                system_instruction=system, response_mime_type="application/json",
+                temperature=temperature))
         return resp.text or ""
+
+    def _raw(self, system, user, temperature=0.0):
+        return self._call_with_fallback(
+            self.model, "gen", lambda m: self._generate(m, system, user, temperature))
 
     def embed(self, texts, is_query=False):
         from google.genai import types
         task = "RETRIEVAL_QUERY" if is_query else "RETRIEVAL_DOCUMENT"
-        r = self._client.models.embed_content(
-            model=self.model,
-            contents=list(texts),
-            config=types.EmbedContentConfig(task_type=task),
-        )
-        return [list(e.values) for e in r.embeddings]
+
+        def _do(model):
+            r = self._client.models.embed_content(
+                model=model, contents=list(texts),
+                config=types.EmbedContentConfig(task_type=task))
+            return [list(e.values) for e in r.embeddings]
+
+        return self._call_with_fallback(self.model, "emb", _do)
 
 
 # Deterministic, role-shaped canned responses for offline runs/tests.

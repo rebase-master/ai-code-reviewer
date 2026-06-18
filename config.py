@@ -22,12 +22,15 @@ REVIEW_LOOP_MAX_ITERS: int = int(os.environ.get("REVIEW_LOOP_MAX_ITERS", "2"))
 # provider is one of: "gemini" (shipped), "mock" (offline, deterministic),
 # and — documented — "anthropic" / "openai" (add an adapter + key to enable).
 # The reviewer intentionally defaults to a DIFFERENT model than the generator.
+# Unknown / busy / timed-out models self-heal via llm.py (it lists the available
+# models and retries on a valid one); rolling aliases like "gemini-flash-lite-latest"
+# also sidestep version-churn 404s.
 DEFAULT_MODELS: dict[str, dict[str, str]] = {
-    "detector":    {"provider": "gemini", "model": "gemini-2.5-flash"},
-    "test_author": {"provider": "gemini", "model": "gemini-2.5-flash"},
-    "refactorer":  {"provider": "gemini", "model": "gemini-2.5-flash"},
-    "reviewer":    {"provider": "gemini", "model": "gemini-3.5-flash"},
-    "judge":       {"provider": "gemini", "model": "gemini-2.5-flash"},
+    "detector":    {"provider": "gemini", "model": "gemini-2.5-flash-lite"},
+    "test_author": {"provider": "gemini", "model": "gemini-2.5-flash-lite"},
+    "refactorer":  {"provider": "gemini", "model": "gemini-2.5-flash-lite"},
+    "reviewer":    {"provider": "gemini", "model": "gemini-3.1-flash-lite"},  # different lite model
+    "judge":       {"provider": "gemini", "model": "gemini-2.5-flash-lite"},
     "embedder":    {"provider": "gemini", "model": "gemini-embedding-001"},
 }
 
