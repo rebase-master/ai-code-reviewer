@@ -1,0 +1,68 @@
+<svg viewBox="0 0 760 600" width="760" height="600" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="ttl dsc">
+  <title id="ttl">Trust gate decision flow</title>
+  <desc id="dsc">Seven checks run top to bottom on a proposed fix; the first failing check decides. The three hard safety checks (reproduce, behavior preserved, fix passes) send a fix to ESCALATE; four softer checks (converged/approved, single clear issue, confidence, small diff) send it to SUGGEST; passing all yields AUTO-APPLY.</desc>
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--ts)"/>
+    </marker>
+  </defs>
+  <style>
+    svg { --tp:#1f2328; --ts:#656d76; --bd:#d0d7de; }
+    @media (prefers-color-scheme: dark) { svg { --tp:#e6edf3; --ts:#8b949e; --bd:#30363d; } }
+    text { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    .t{font-size:20px;font-weight:600;fill:var(--tp)}
+    .sub{font-size:12.5px;fill:var(--ts)}
+    .gate{fill:none;stroke:var(--bd);stroke-width:1.5}
+    .gl{font-size:12.5px;fill:var(--tp)}
+    .edge{stroke:var(--ts);stroke-width:1.4;fill:none}
+    .el{font-size:11px;fill:var(--ts)}
+    .cw{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:13px;font-weight:600;fill:var(--tp)}
+    .cs{font-size:11px;fill:var(--ts)}
+    .lg{font-size:11px;fill:var(--ts)}
+  </style>
+
+  <text class="t" x="40" y="30">Trust gate — decision flow</text>
+  <text class="sub" x="40" y="51">Checks run top-to-bottom on a proposed fix; the first failing one decides.</text>
+
+  <!-- outcome regions -->
+  <rect x="470" y="78" width="250" height="156" rx="10" fill="#d9655f" fill-opacity="0.13" stroke="#d9655f" stroke-width="1.5"/>
+  <text class="cw" x="595" y="150" text-anchor="middle">ESCALATE</text>
+  <text class="cs" x="595" y="168" text-anchor="middle">route to a human</text>
+
+  <rect x="470" y="252" width="250" height="214" rx="10" fill="#d9a441" fill-opacity="0.15" stroke="#d9a441" stroke-width="1.5"/>
+  <text class="cw" x="595" y="352" text-anchor="middle">SUGGEST</text>
+  <text class="cs" x="595" y="370" text-anchor="middle">show a human, don't apply</text>
+
+  <rect x="120" y="496" width="180" height="44" rx="10" fill="#5fa777" fill-opacity="0.16" stroke="#5fa777" stroke-width="1.5"/>
+  <text class="cw" x="210" y="519" text-anchor="middle">AUTO-APPLY</text>
+  <text class="cs" x="210" y="534" text-anchor="middle">agent acts</text>
+
+  <!-- gates -->
+  <rect class="gate" x="60" y="78"  width="300" height="40" rx="8"/><text class="gl" x="210" y="103" text-anchor="middle">1 · Test reproduces the flaw?</text>
+  <rect class="gate" x="60" y="136" width="300" height="40" rx="8"/><text class="gl" x="210" y="161" text-anchor="middle">2 · Existing behavior preserved?</text>
+  <rect class="gate" x="60" y="194" width="300" height="40" rx="8"/><text class="gl" x="210" y="219" text-anchor="middle">3 · Fix passes its own test?</text>
+  <rect class="gate" x="60" y="252" width="300" height="40" rx="8"/><text class="gl" x="210" y="277" text-anchor="middle">4 · Loop converged &amp; approved?</text>
+  <rect class="gate" x="60" y="310" width="300" height="40" rx="8"/><text class="gl" x="210" y="335" text-anchor="middle">5 · Single, clear issue?</text>
+  <rect class="gate" x="60" y="368" width="300" height="40" rx="8"/><text class="gl" x="210" y="393" text-anchor="middle">6 · Confidence ≥ 0.6?</text>
+  <rect class="gate" x="60" y="426" width="300" height="40" rx="8"/><text class="gl" x="210" y="451" text-anchor="middle">7 · Small, low-risk diff?</text>
+
+  <!-- down edges (pass / yes) -->
+  <line class="edge" x1="210" y1="118" x2="210" y2="136" marker-end="url(#ah)"/><text class="el" x="216" y="131">yes</text>
+  <line class="edge" x1="210" y1="176" x2="210" y2="194" marker-end="url(#ah)"/><text class="el" x="216" y="189">yes</text>
+  <line class="edge" x1="210" y1="234" x2="210" y2="252" marker-end="url(#ah)"/><text class="el" x="216" y="247">yes</text>
+  <line class="edge" x1="210" y1="292" x2="210" y2="310" marker-end="url(#ah)"/><text class="el" x="216" y="305">yes</text>
+  <line class="edge" x1="210" y1="350" x2="210" y2="368" marker-end="url(#ah)"/><text class="el" x="216" y="363">yes</text>
+  <line class="edge" x1="210" y1="408" x2="210" y2="426" marker-end="url(#ah)"/><text class="el" x="216" y="421">yes</text>
+  <line class="edge" x1="210" y1="466" x2="210" y2="496" marker-end="url(#ah)"/><text class="el" x="216" y="484">yes</text>
+
+  <!-- right edges (fail / no) -->
+  <line class="edge" x1="360" y1="98"  x2="470" y2="98"  marker-end="url(#ah)"/><text class="el" x="412" y="92"  text-anchor="middle">no</text>
+  <line class="edge" x1="360" y1="156" x2="470" y2="156" marker-end="url(#ah)"/><text class="el" x="412" y="150" text-anchor="middle">no</text>
+  <line class="edge" x1="360" y1="214" x2="470" y2="214" marker-end="url(#ah)"/><text class="el" x="412" y="208" text-anchor="middle">no</text>
+  <line class="edge" x1="360" y1="272" x2="470" y2="272" marker-end="url(#ah)"/><text class="el" x="412" y="266" text-anchor="middle">no</text>
+  <line class="edge" x1="360" y1="330" x2="470" y2="330" marker-end="url(#ah)"/><text class="el" x="412" y="324" text-anchor="middle">no</text>
+  <line class="edge" x1="360" y1="388" x2="470" y2="388" marker-end="url(#ah)"/><text class="el" x="412" y="382" text-anchor="middle">no</text>
+  <line class="edge" x1="360" y1="446" x2="470" y2="446" marker-end="url(#ah)"/><text class="el" x="412" y="440" text-anchor="middle">no</text>
+
+  <text class="lg" x="40" y="572">Color = outcome.  Gates 1–3 are hard safety checks → escalate · gates 4–7 are soft checks → suggest · pass all → auto-apply.</text>
+</svg>
