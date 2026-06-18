@@ -16,11 +16,13 @@ import os
 import sys
 
 import agents
+import config
 import evals
 from agents import (AUTO_APPLY, DECISIONS, ESCALATE, SEVERITIES, SUGGEST,
                     trust_decision)
 from executor import behavior_preserved, evaluate_cases, run_inputs
 from llm import LLMError, MockClient, get_client, parse_json
+from pipeline import run_snippet
 
 _PASS = 0
 _FAIL = 0
@@ -225,6 +227,20 @@ check("llm: complete_json retries once then parses",
 check("agents: all role prompts present", all(hasattr(agents, n) for n in (
     "DETECTOR_SYSTEM_PROMPT", "TEST_AUTHOR_SYSTEM_PROMPT", "REFACTORER_SYSTEM_PROMPT",
     "REVIEWER_SYSTEM_PROMPT", "GROUNDEDNESS_JUDGE_PROMPT")))
+
+# --------------------------------------------------------------------------- #
+# 7. Pipeline — end-to-end smoke test, fully offline via the mock client
+# --------------------------------------------------------------------------- #
+os.environ["TRIAGE_OFFLINE"] = "1"
+try:
+    _trace = run_snippet({"id": "smoke", "func_name": "average",
+                          "code": "def average(nums):\n    return sum(nums) / len(nums)\n"})
+finally:
+    os.environ.pop("TRIAGE_OFFLINE", None)
+check("pipeline: produces a detection", _trace.get("detection") is not None)
+check("pipeline: trust decision is valid", _trace.get("trust", {}).get("decision") in DECISIONS)
+check("pipeline: review loop is bounded", len(_trace.get("iterations", [])) <= config.REVIEW_LOOP_MAX_ITERS)
+check("pipeline: one bad refactor doesn't crash the run", _trace.get("error") is None)
 
 # --------------------------------------------------------------------------- #
 # Summary
