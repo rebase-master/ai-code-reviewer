@@ -113,8 +113,8 @@ def _render_dashboard(res):
     import pandas as pd
     s = res["summary"]
     if res["config"]["offline"]:
-        st.warning("Offline mock run — numbers are illustrative only. Add a key and turn off "
-                   "offline mode for real results.")
+        st.warning("Offline replay — agents return the dataset's *reference* solutions, so these are "
+                   "ideal/ceiling numbers, not a live model's. Run with a key (offline off) for real results.")
 
     unsafe = s["unsafe_auto_applies"]
     c = st.columns(4)
@@ -212,8 +212,9 @@ reviewer_model = config.model_for("reviewer", overrides)["model"]
 
 with tab1:
     if config.offline_mode():
-        st.caption("⚠️ Offline mock mode — agent outputs are canned and **do not vary by snippet**. "
-                   "Add a GEMINI_API_KEY and turn off offline mode (sidebar) for real per-snippet analysis.")
+        st.caption("⚠️ Offline replay — for the labeled snippets, agents replay the dataset's "
+                   "*reference* solutions (a ground-truth ceiling, not a live model); custom code "
+                   "falls back to a flat stub. Add a GEMINI_API_KEY (offline off) for real analysis.")
     snippets = _load_snippets()
     labels = {f"{s['id']} — {s['flaw_type']}": s for s in snippets}
     choice = st.selectbox("Pick a labeled snippet, or choose Custom to paste your own",
