@@ -1,0 +1,3 @@
+# Committed UI config — NO secrets here (those live in the git-ignored secrets.toml).
+[theme]
+primaryColor = "#5fa777"

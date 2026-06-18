@@ -73,6 +73,11 @@ For real models, copy [`.streamlit/secrets.toml.example`](.streamlit/secrets.tom
 `.streamlit/secrets.toml` and set `GEMINI_API_KEY` (free tier:
 <https://aistudio.google.com/apikey>). The file is git-ignored.
 
+## Deploy (free)
+
+Streamlit Community Cloud (uv-native via `uv.lock`) or Hugging Face Spaces — step by step in
+[`DEPLOY.md`](DEPLOY.md). With no API key set, a deploy defaults to offline replay so it still demos.
+
 ## Configurable, cross-model
 
 Each agent role maps to a provider + model in [`config.py`](config.py) (overridable via the
