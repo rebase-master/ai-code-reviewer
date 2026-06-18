@@ -21,7 +21,8 @@ import evals
 from agents import (AUTO_APPLY, DECISIONS, ESCALATE, SEVERITIES, SUGGEST,
                     trust_decision)
 from executor import behavior_preserved, evaluate_cases, run_inputs
-from llm import LLMError, MockClient, get_client, parse_json
+from llm import (LLMError, MockClient, _is_recoverable, _pick_model, get_client,
+                 parse_json)
 from pipeline import run_snippet
 
 _PASS = 0
@@ -259,6 +260,22 @@ check("eval: unsafe_auto_applies is a non-negative int",
 check("eval: no pipeline errors offline", _summ.get("pipeline_errors") == 0)
 check("eval: config records models + offline flag",
       "models" in _res.get("config", {}) and _res["config"].get("offline") is True)
+
+# --------------------------------------------------------------------------- #
+# 9. Model fallback (pure helpers behind the self-heal for missing/busy models)
+# --------------------------------------------------------------------------- #
+check("llm: 404 is recoverable", _is_recoverable(404, "not found"))
+check("llm: overloaded/503 is recoverable", _is_recoverable(503, "model is overloaded, try again"))
+check("llm: timeout message is recoverable", _is_recoverable(None, "deadline exceeded"))
+check("llm: 400 invalid-argument is NOT recoverable", not _is_recoverable(400, "invalid argument"))
+check("llm: keep requested model when it's available",
+      _pick_model("gemini-2.5-flash", ["gemini-2.5-flash", "x"], ["y"]) == "gemini-2.5-flash")
+check("llm: fall back to a listed model when requested is missing",
+      _pick_model("gemini-3.5-flash-lite", ["gemini-3.1-flash-lite", "gemini-2.5-flash"],
+                  ["gemini-2.5-flash", "gemini-3.1-flash-lite"]) == "gemini-2.5-flash")
+check("llm: never reuse the model that just failed",
+      _pick_model("a", ["a", "b"], ["a", "b"], exclude="a") == "b")
+check("llm: None when nothing is available", _pick_model("a", [], ["x"]) is None)
 
 # --------------------------------------------------------------------------- #
 # Summary
