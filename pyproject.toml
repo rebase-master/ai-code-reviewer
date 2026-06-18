@@ -1,0 +1,15 @@
+[project]
+name = "ai-pair-engineer"
+version = "0.1.0"
+description = "An AI pair engineer: detect a flaw, write a failing test, and refactor in a bounded cross-model review loop behind a deterministic trust gate — with a runnable evaluation harness."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "google-genai>=1.0",   # Gemini SDK  ->  from google import genai
+    "streamlit>=1.40,<2",  # UI
+    "pandas>=2.1,<3",      # eval dashboard tables
+]
+
+[tool.uv]
+# Flat-module app, not an installable package — uv just manages the env + deps.
+package = false
