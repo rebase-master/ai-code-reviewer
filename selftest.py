@@ -9,11 +9,14 @@ Exits non-zero if any check fails. Data/consistency checks are added later.
 """
 from __future__ import annotations
 
+import difflib
 import itertools
+import json
 import sys
 
 import evals
-from agents import (AUTO_APPLY, DECISIONS, ESCALATE, SUGGEST, trust_decision)
+from agents import (AUTO_APPLY, DECISIONS, ESCALATE, SEVERITIES, SUGGEST,
+                    trust_decision)
 from executor import behavior_preserved, evaluate_cases, run_inputs
 
 _PASS = 0
@@ -118,6 +121,56 @@ check("eval: precision", prf["precision"] == 0.5)
 check("eval: recall", prf["recall"] == 0.5)
 check("eval: f1", prf["f1"] == 0.5)
 check("eval: confusion counts", evals.confusion_matrix([("a", "a"), ("a", "b"), ("b", "b")])["a"]["b"] == 1)
+
+# --------------------------------------------------------------------------- #
+# 5. Dataset + KB — schema, validity, and label/policy consistency
+# --------------------------------------------------------------------------- #
+with open("snippets.json", encoding="utf-8") as _fh:
+    SNIPPETS = json.load(_fh)
+with open("practices.json", encoding="utf-8") as _fh:
+    PRACTICES = json.load(_fh)
+
+_REQ = {"id", "func_name", "flaw_type", "severity", "edge_case",
+        "should_auto_apply", "code", "reference_fix", "behavior_inputs",
+        "test_cases", "notes"}
+_ids = [s["id"] for s in SNIPPETS]
+check("data: >= 10 snippets", len(SNIPPETS) >= 10)
+check("data: snippet ids unique", len(set(_ids)) == len(_ids))
+check("data: snippet schema complete", all(_REQ.issubset(s) for s in SNIPPETS))
+check("data: severities valid", all(s["severity"] in SEVERITIES for s in SNIPPETS))
+check("data: practices schema + size",
+      len(PRACTICES) >= 5 and all({"id", "title", "content"}.issubset(p) for p in PRACTICES))
+
+
+def _diff_lines(a: str, b: str) -> int:
+    d = difflib.unified_diff(a.splitlines(), b.splitlines(), lineterm="", n=0)
+    return sum(1 for ln in d if ln[:1] in ("+", "-") and not ln.startswith(("+++", "---")))
+
+
+# For each snippet, derive the trust signals by ACTUALLY running the reference
+# fix through the executor, then confirm (a) the dataset is valid and (b) the
+# should_auto_apply label matches what the trust policy decides. Fully offline.
+_NO_REPRO = {"no_flaw", "perf_only"}
+_validity_ok = True
+_consistency_ok = True
+for s in SNIPPETS:
+    repro = evaluate_cases(s["code"], s["func_name"], s["test_cases"])["any_failed"]
+    fix_ok = evaluate_cases(s["reference_fix"], s["func_name"], s["test_cases"])["all_passed"]
+    preserved, _ = behavior_preserved(s["code"], s["reference_fix"], s["func_name"], s["behavior_inputs"])
+    if s["edge_case"] in _NO_REPRO:
+        if repro:
+            _validity_ok = False          # a "clean" snippet must have no failing test
+    elif not (repro and fix_ok):
+        _validity_ok = False              # a flawed snippet's test must fail on it and pass on the fix
+    dec, _ = trust_decision(
+        repro=repro, fix_passes=fix_ok, behavior_preserved=preserved,
+        reviewer_approved=True, converged=True, flaw_confidence=0.9,
+        diff_lines=_diff_lines(s["code"], s["reference_fix"]),
+        severity=s["severity"], ambiguous=s["edge_case"] in ("subtle", "multi"))
+    if (dec == AUTO_APPLY) != bool(s["should_auto_apply"]):
+        _consistency_ok = False
+check("data: reference fixes valid (flaw reproduces & fix passes; clean snippets don't)", _validity_ok)
+check("data: labels match the trust policy on idealized signals", _consistency_ok)
 
 # --------------------------------------------------------------------------- #
 # Summary

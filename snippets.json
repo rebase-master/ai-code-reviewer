@@ -1,0 +1,175 @@
+[
+  {
+    "id": "S01",
+    "func_name": "average",
+    "flaw_type": "empty_input_crash",
+    "severity": "medium",
+    "edge_case": null,
+    "should_auto_apply": true,
+    "code": "def average(nums):\n    return sum(nums) / len(nums)\n",
+    "reference_fix": "def average(nums):\n    return sum(nums) / len(nums) if nums else 0.0\n",
+    "behavior_inputs": [[[2, 4]], [[1, 2, 3]]],
+    "test_cases": [
+      {"args": [[2, 4]], "expect": {"kind": "returns", "value": 3.0}},
+      {"args": [[]], "expect": {"kind": "not_raises"}}
+    ],
+    "notes": "Division by zero on empty input; fix adds an empty guard without changing other results."
+  },
+  {
+    "id": "S02",
+    "func_name": "append_item",
+    "flaw_type": "mutable_default_arg",
+    "severity": "medium",
+    "edge_case": null,
+    "should_auto_apply": true,
+    "code": "def append_item(item, bucket=[]):\n    bucket.append(item)\n    return bucket\n",
+    "reference_fix": "def append_item(item, bucket=None):\n    if bucket is None:\n        bucket = []\n    bucket.append(item)\n    return bucket\n",
+    "behavior_inputs": [[3]],
+    "test_cases": [
+      {"args": [1], "expect": {"kind": "returns", "value": [1]}},
+      {"args": [2], "expect": {"kind": "returns", "value": [2]}}
+    ],
+    "notes": "Shared mutable default accumulates across calls; second call exposes it."
+  },
+  {
+    "id": "S03",
+    "func_name": "shout",
+    "flaw_type": "none_guard",
+    "severity": "low",
+    "edge_case": null,
+    "should_auto_apply": true,
+    "code": "def shout(text):\n    return text.upper() + \"!\"\n",
+    "reference_fix": "def shout(text):\n    if text is None:\n        return \"\"\n    return text.upper() + \"!\"\n",
+    "behavior_inputs": [["hi"]],
+    "test_cases": [
+      {"args": ["hi"], "expect": {"kind": "returns", "value": "HI!"}},
+      {"args": [null], "expect": {"kind": "not_raises"}}
+    ],
+    "notes": "AttributeError when text is None; fix guards None and keeps existing output."
+  },
+  {
+    "id": "S04",
+    "func_name": "top_score",
+    "flaw_type": "empty_input_crash",
+    "severity": "medium",
+    "edge_case": null,
+    "should_auto_apply": true,
+    "code": "def top_score(scores):\n    return max(scores)\n",
+    "reference_fix": "def top_score(scores):\n    return max(scores) if scores else None\n",
+    "behavior_inputs": [[[3, 7, 2]]],
+    "test_cases": [
+      {"args": [[3, 7, 2]], "expect": {"kind": "returns", "value": 7}},
+      {"args": [[]], "expect": {"kind": "not_raises"}}
+    ],
+    "notes": "max() raises ValueError on empty; fix returns None for empty input."
+  },
+  {
+    "id": "S05",
+    "func_name": "parse_int",
+    "flaw_type": "unhandled_exception",
+    "severity": "low",
+    "edge_case": null,
+    "should_auto_apply": true,
+    "code": "def parse_int(s):\n    return int(s)\n",
+    "reference_fix": "def parse_int(s):\n    try:\n        return int(s)\n    except (ValueError, TypeError):\n        return 0\n",
+    "behavior_inputs": [["42"], ["7"]],
+    "test_cases": [
+      {"args": ["42"], "expect": {"kind": "returns", "value": 42}},
+      {"args": ["x"], "expect": {"kind": "not_raises"}}
+    ],
+    "notes": "int() raises on non-numeric input; fix returns a default and preserves valid parses."
+  },
+  {
+    "id": "S06",
+    "func_name": "to_cents",
+    "flaw_type": "float_truncation",
+    "severity": "medium",
+    "edge_case": "subtle",
+    "should_auto_apply": false,
+    "code": "def to_cents(dollars):\n    return int(dollars * 100)\n",
+    "reference_fix": "def to_cents(dollars):\n    return round(dollars * 100)\n",
+    "behavior_inputs": [[2.0], [0.5]],
+    "test_cases": [
+      {"args": [0.29], "expect": {"kind": "returns", "value": 29}}
+    ],
+    "notes": "Subtle float truncation (int(0.29*100)==28). Correct, but subtle — should go to a human, not auto-apply."
+  },
+  {
+    "id": "S07",
+    "func_name": "withdraw",
+    "flaw_type": "missing_validation",
+    "severity": "critical",
+    "edge_case": null,
+    "should_auto_apply": false,
+    "code": "def withdraw(balance, amount):\n    return balance - amount\n",
+    "reference_fix": "def withdraw(balance, amount):\n    if amount > balance:\n        raise ValueError(\"insufficient funds\")\n    return balance - amount\n",
+    "behavior_inputs": [[100, 30], [50, 50]],
+    "test_cases": [
+      {"args": [100, 150], "expect": {"kind": "raises", "exc": "ValueError"}}
+    ],
+    "notes": "Allows overdraft. Fix is correct AND behavior-preserving on valid inputs, but severity is critical (money) so the gate still routes to a human."
+  },
+  {
+    "id": "S08",
+    "func_name": "avg_positive",
+    "flaw_type": "multiple_flaws",
+    "severity": "medium",
+    "edge_case": "multi",
+    "should_auto_apply": false,
+    "code": "def avg_positive(nums):\n    total = 0\n    for n in nums:\n        total += n\n    return total / len(nums)\n",
+    "reference_fix": "def avg_positive(nums):\n    positives = [n for n in nums if n > 0]\n    if not positives:\n        return 0.0\n    return sum(positives) / len(positives)\n",
+    "behavior_inputs": [[[2, 4]]],
+    "test_cases": [
+      {"args": [[1, -2, 3]], "expect": {"kind": "returns", "value": 2.0}}
+    ],
+    "notes": "Two issues: counts non-positives and divides by zero on empty. Multiple flaws -> human review."
+  },
+  {
+    "id": "S09",
+    "func_name": "celsius_to_fahrenheit",
+    "flaw_type": "none",
+    "severity": "low",
+    "edge_case": "no_flaw",
+    "should_auto_apply": false,
+    "code": "def celsius_to_fahrenheit(c):\n    return c * 9 / 5 + 32\n",
+    "reference_fix": "def celsius_to_fahrenheit(c):\n    return c * 9 / 5 + 32\n",
+    "behavior_inputs": [[0], [100]],
+    "test_cases": [
+      {"args": [0], "expect": {"kind": "returns", "value": 32.0}},
+      {"args": [100], "expect": {"kind": "returns", "value": 212.0}}
+    ],
+    "notes": "Clean, correct function. The agent must NOT fabricate a flaw or auto-apply a change."
+  },
+  {
+    "id": "S10",
+    "func_name": "has_duplicates",
+    "flaw_type": "inefficiency",
+    "severity": "low",
+    "edge_case": "perf_only",
+    "should_auto_apply": false,
+    "code": "def has_duplicates(items):\n    for i in range(len(items)):\n        for j in range(i + 1, len(items)):\n            if items[i] == items[j]:\n                return True\n    return False\n",
+    "reference_fix": "def has_duplicates(items):\n    return len(set(items)) != len(items)\n",
+    "behavior_inputs": [[[1, 2, 3]], [[1, 2, 2]]],
+    "test_cases": [
+      {"args": [[1, 2, 3]], "expect": {"kind": "returns", "value": false}},
+      {"args": [[1, 2, 2]], "expect": {"kind": "returns", "value": true}}
+    ],
+    "notes": "O(n^2) but functionally correct: no behavioral test fails, so there is no red->green proof -> not auto-applied."
+  },
+  {
+    "id": "S11",
+    "func_name": "second_item",
+    "flaw_type": "index_error",
+    "severity": "low",
+    "edge_case": null,
+    "should_auto_apply": true,
+    "code": "def second_item(items):\n    return items[1]\n",
+    "reference_fix": "def second_item(items):\n    return items[1] if len(items) > 1 else None\n",
+    "behavior_inputs": [[[1, 2, 3]], [[5, 6]]],
+    "test_cases": [
+      {"args": [[1, 2, 3]], "expect": {"kind": "returns", "value": 2}},
+      {"args": [[9]], "expect": {"kind": "not_raises"}}
+    ],
+    "notes": "IndexError when fewer than two items; fix returns None and preserves the in-range result."
+  }
+]
